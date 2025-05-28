@@ -1,0 +1,153 @@
+-------configuracion para no ver el db.json------------ 
+  <Files "db.json">
+  Order allow,deny
+  Deny from all
+</Files>
+
+RewriteEngine On
+
+RewriteRule ^(app|dict|ns|tmp)\/|\.ini$ - [R=404]
+
+RewriteCond %{REQUEST_FILENAME} !-l
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule .* index.php [L,QSA]
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization},L]
+
+---------------------------------A05:2021 – – Insecure Design ==> Los objetos que se envía en JSON corresponde a atributos de la BD.-------------------------------------------------------------------
+
+		$R = array_key_exists('uname',$jsB) && array_key_exists('email',$jsB) && array_key_exists('password',$jsB);
+		// TODO checar si estan vacio los elementos del json
+		if (!$R){
+			echo '{"R":-1}';
+			return;
+		}
+
+codigo moficado 
+    // Verificar que todos los campos esperados existen
+    $esperados = ['uname', 'email', 'password'];
+    foreach ($esperados as $campo) {
+        if (!isset($input[$campo]) || empty(trim($input[$campo]))) {
+            http_response_code(400);
+            echo json_encode(["error" => "Falta o vacio el campo: $campo"]);
+            return;
+        }
+    }
+
+---------------------------------------A03:2021 Injection-----SQL injection en el registro----------------------------------------------------------------------------
+
+$R = $db->exec('insert into Usuario values(null,"'.$jsB['uname'].'","'.$jsB['email'].'",md5("'.$jsB['password'].'"))');
+
+codigo modificado 
+
+    try {
+        // Usar consultas preparadas para evitar inyecciones SQL
+        $stmt = $db->prepare("INSERT INTO Usuario (uname, email, password) VALUES (?, ?, ?)");
+        $stmt->execute([$uname, $email, $hash]);
+
+        echo json_encode(["success" => true]);
+
+--------------------------------------A04:2021 - Insecure Design (Validación de email)--------------------------------------------------------------------------
+
+$R = array_key_exists('uname',$jsB) && array_key_exists('email',$jsB) && array_key_exists('password',$jsB);
+
+
+codigo modificado-----
+      // Validar formato de email
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        http_response_code(400);
+        echo json_encode(["error" => "Correo electronico no valido"]);
+        return;
+    }
+
+
+
+
+
+----------------------------------------A02:2021 - Cryptographic Failures(Uso de hash)----------------------------------------------------------------------------------
+
+
+try {
+			$R = $db->exec('insert into Usuario values(null,"'.$jsB['uname'].'","'.$jsB['email'].'",md5("'.$jsB['password'].'"))');
+		} catch (Exception $e) {
+			echo '{"R":-2}';
+			return;
+		}
+		echo "{\"R\":0,\"D\":".var_export($R,TRUE)."}";
+	}
+
+      ----codigo modificado----
+   // Hashear la contraseña de forma segura
+    $hash = password_hash($password, PASSWORD_DEFAULT);
+
+    try {
+        // Usar consultas preparadas para evitar inyecciones SQL
+        $stmt = $db->prepare("INSERT INTO Usuario (uname, email, password) VALUES (?, ?, ?)");
+        $stmt->execute([$uname, $email, $hash]);
+
+        echo json_encode(["success" => true]);
+
+
+
+
+--------------------------------------A04:2021 - Insecure Design (Extencion del archivo)-------------------------------------------------------------------------------
+
+
+		$id_Usuario = $R[0]['id_Usuario'];
+		file_put_contents('tmp/'.$id_Usuario,base64_decode($jsB['data']));
+		$jsB['data'] = '';
+
+.............codigo modifiicado------------------
+// Validar extensión permitida
+        $extensionesPermitidas = ['jpg', 'jpeg', 'png', 'gif'];
+        if (!in_array(strtolower($jsB['ext']), $extensionesPermitidas)) {
+            echo json_encode(["R" => -2, "error" => "Extensión no permitida"]);
+            return;
+        }
+
+
+
+--------------------------------------------A04:2021 - Insecure Design (Verificar que la informacion sea base64)---------------------------------------------------
+
+		$id_Usuario = $R[0]['id_Usuario'];
+		file_put_contents('tmp/'.$id_Usuario,base64_decode($jsB['data']));
+		$jsB['data'] = '';
+
+  codigo modificado-----------------------
+
+        // Guardar imagen temporal
+        $tmpPath = 'tmp/' . $id_Usuario;
+        file_put_contents($tmpPath, base64_decode($jsB['data']));
+
+        // Insertar metadatos de la imagen en la base de datos
+        try {
+            $stmt = $db->prepare('INSERT INTO Imagen (name, ruta, id_Usuario) VALUES (?, ?, ?)');
+            $stmt->execute([$jsB['name'], 'img/', $id_Usuario]);
+
+            $idImagen = $db->lastInsertId();
+
+            // Actualizar ruta con nombre de archivo final
+            $rutaFinal = 'img/' . $idImagen . '.' . $jsB['ext'];
+            $stmt = $db->prepare('UPDATE Imagen SET ruta = ? WHERE id = ?');
+            $stmt->execute([$rutaFinal, $idImagen]);
+
+            // Mover archivo a su nueva ubicación
+            rename($tmpPath, $rutaFinal);
+
+-------------------------------------------A03:2021 - Injection (SQL en Imagen)-------------------------------------------------------------------------------------
+
+  $R = $db->exec('insert into Imagen values(null,"'.$jsB['name'].'","img/",'.$id_Usuario.');');
+
+
+codigo a modificar ----------------------------------
+
+     $stmt = $db->prepare('INSERT INTO Imagen (name, ruta, id_Usuario) VALUES (?, ?, ?)');
+            $stmt->execute([$jsB['name'], 'img/', $id_Usuario]);
+
+
+
+---------------------------------------------
+
+
+
+  
